@@ -271,7 +271,8 @@ const FORMATOS_CFG = {
   Reels:        { meta: 4,  icon: '🎬', cor: '#E07B2A' },
   Stories:      { meta: 12, icon: '⭕', cor: '#6B3FA0' },
   Blog:         { meta: 2,  icon: '📝', cor: '#1E4D8C' },
-  LinkedIn:     { meta: 2,  icon: '💼', cor: '#1E4D8C' },
+  LinkedIn:     { meta: 2,  icon: '💼', cor: '#0077B5' },
+  YouTube:      { meta: 2,  icon: '▶️', cor: '#FF0000' },
   Dino:         { meta: 1,  icon: '📰', cor: '#1A7A4A' },
   ADS:          { meta: 3,  icon: '🎯', cor: '#E07B2A' },
   'Meme/Extra': { meta: 4,  icon: '😂', cor: '#888780' }
@@ -328,7 +329,11 @@ function initEstado() {
     let backlog = [];
     try { const s = localStorage.getItem(SK_CFG(mes)+'_backlog'); if(s) backlog = JSON.parse(s); } catch(e){}
 
-    estado[mes] = { pubs, metasFormatos: mf, metasPilares: mp, destaques: dest, tema, analytics, backlog };
+    // Temas (conteúdos agendados com múltiplos formatos)
+    let temas = [];
+    try { const s = localStorage.getItem(SK_CFG(mes)+'_temas'); if(s) temas = JSON.parse(s); } catch(e){}
+
+    estado[mes] = { pubs, metasFormatos: mf, metasPilares: mp, destaques: dest, tema, analytics, backlog, temas };
   });
 }
 
@@ -342,6 +347,7 @@ function salvarMes(mes) {
     localStorage.setItem(SK_CFG(mes)+'_tema', e.tema || '');
     localStorage.setItem(SK_CFG(mes)+'_analytics', JSON.stringify(e.analytics));
     localStorage.setItem(SK_CFG(mes)+'_backlog', JSON.stringify(e.backlog));
+    localStorage.setItem(SK_CFG(mes)+'_temas', JSON.stringify(e.temas || []));
   } catch(err){}
   // Envia pro Sheets em background
   enviarSheets(mes);
@@ -610,12 +616,12 @@ function buildMesHTML(mes) {
   return `
   <!-- SUBTABS MÊS -->
   <div style="display:flex;gap:8px;margin-bottom:24px;border-bottom:1px solid var(--border);padding-bottom:0;">
-    ${['dashboard','publicacoes','calendario','analytics','backlog','configuracoes'].map(sub => `
+    ${['dashboard','publicacoes','calendario','analytics','backlog','temas','configuracoes'].map(sub => `
       <button onclick="trocarSubAba('${mes}','${sub}',this)"
         style="padding:8px 16px;font-size:13px;font-weight:500;border:none;background:none;cursor:pointer;font-family:inherit;
         color:var(--muted);border-bottom:2px solid transparent;margin-bottom:-1px;transition:all 0.15s;"
         class="subtab-${mes}-${sub}" id="subtab-${mes}-${sub}">
-        ${sub==='dashboard'?'Dashboard':sub==='publicacoes'?'Publicações':sub==='calendario'?'Calendário':sub==='analytics'?'Analytics':sub==='backlog'?'Backlog':'Configurações'}
+        ${sub==='dashboard'?'Dashboard':sub==='publicacoes'?'Publicações':sub==='calendario'?'Calendário':sub==='analytics'?'Analytics':sub==='backlog'?'Backlog':sub==='temas'?'Temas':'Configurações'}
       </button>`).join('')}
   </div>
 
@@ -670,10 +676,14 @@ function buildMesHTML(mes) {
     <div class="cal-wrap">
       <div class="cal-grid" id="cal-grid-${mes}"></div>
       <div class="cal-legenda">
-        <div class="cal-leg-item"><div class="cal-leg-dot" style="background:var(--success-bg);border:1px solid var(--success);"></div> Vendas</div>
-        <div class="cal-leg-item"><div class="cal-leg-dot" style="background:var(--info-bg);border:1px solid var(--info);"></div> Branding</div>
-        <div class="cal-leg-item"><div class="cal-leg-dot" style="background:#EDE8F7;border:1px solid var(--roxo);"></div> Saúde Financeira</div>
-        <div class="cal-leg-item"><div class="cal-leg-dot" style="background:var(--border);"></div> Extra</div>
+        <div class="cal-leg-item"><div class="cal-leg-dot" style="background:var(--success-bg);border:1px solid var(--success);"></div> Publicado (pilar Vendas)</div>
+        <div class="cal-leg-item"><div class="cal-leg-dot" style="background:var(--info-bg);border:1px solid var(--info);"></div> Publicado (pilar Branding)</div>
+        <div class="cal-leg-item"><div class="cal-leg-dot" style="background:#EDE8F7;border:1px solid var(--roxo);"></div> Publicado (Saúde Fin.)</div>
+        <div class="cal-leg-item"><span style="font-size:12px;">🔵</span> Agendado</div>
+        <div class="cal-leg-item"><span style="font-size:12px;">🟡</span> Hoje</div>
+        <div class="cal-leg-item"><span style="font-size:12px;">🔴</span> Atrasado</div>
+        <div class="cal-leg-item"><span style="font-size:12px;">✅</span> Publicado</div>
+        <div class="cal-leg-item"><span style="font-size:12px;">⚫</span> Cancelado</div>
       </div>
     </div>
     <div class="footer" style="margin-top:24px;">Publicações sem data aparecem no dia 1 do mês.</div>
@@ -713,6 +723,36 @@ function buildMesHTML(mes) {
     <div class="section-label">Ideias registradas <span id="bk-count-${mes}"></span></div>
     <div class="bk-list" id="bk-list-${mes}"></div>
     <div class="footer" style="margin-top:24px;">Ideias aprovadas podem virar publicações na aba Publicações.</div>
+  </div>
+
+  <!-- TEMAS -->
+  <div id="subpanel-${mes}-temas" style="display:none;">
+    <div class="section-label">Criar tema</div>
+    <div class="add-card">
+      <div style="display:grid;grid-template-columns:1fr 160px;gap:10px;margin-bottom:12px;">
+        <div class="field"><label>Nome do tema / conteúdo central</label>
+          <input type="text" id="tm-titulo-${mes}" placeholder="Ex: Impacto das Bets no bolso" maxlength="100" /></div>
+        <div class="field"><label>Pilar</label>
+          <select id="tm-pilar-${mes}">
+            <option value="">Pilar...</option>
+            ${PILARES_CFG.map(p=>`<option value="${p.nome}">${p.nome}</option>`).join('')}
+          </select></div>
+      </div>
+      <div class="section-label" style="margin-top:0;">Formatos e datas</div>
+      <div id="tm-formatos-${mes}" style="display:flex;flex-direction:column;gap:8px;margin-bottom:12px;"></div>
+      <button onclick="adicionarFormatoTema('${mes}')"
+        style="background:var(--bg);border:1px dashed var(--border);color:var(--muted);padding:8px 16px;border-radius:8px;cursor:pointer;font-size:13px;font-family:inherit;margin-bottom:16px;">
+        + Adicionar formato
+      </button>
+      <div style="display:flex;gap:10px;align-items:center;">
+        <button class="btn-add" onclick="salvarTema('${mes}')">Criar tema</button>
+        <span class="save-status" id="status-tm-${mes}">✓ Tema criado</span>
+      </div>
+    </div>
+
+    <div class="section-label">Temas do mês <span id="tm-count-${mes}"></span></div>
+    <div id="tm-list-${mes}"></div>
+    <div class="footer" style="margin-top:24px;">Temas agendados aparecem no Calendário. Mude o status de cada formato conforme publicar.</div>
   </div>
 
   <!-- CONFIGURAÇÕES -->
@@ -760,7 +800,7 @@ function buildMesHTML(mes) {
 
 let subAbas = {};
 function trocarSubAba(mes, sub, btn) {
-  ['dashboard','publicacoes','calendario','analytics','backlog','configuracoes'].forEach(s => {
+  ['dashboard','publicacoes','calendario','analytics','backlog','temas','configuracoes'].forEach(s => {
     const el = document.getElementById(`subpanel-${mes}-${s}`);
     if(el) el.style.display = s===sub ? 'block' : 'none';
     const b = document.getElementById(`subtab-${mes}-${s}`);
@@ -772,6 +812,7 @@ function trocarSubAba(mes, sub, btn) {
   if(sub==='configuracoes') renderCfg(mes);
   if(sub==='calendario') renderCalendario(mes);
   if(sub==='backlog') renderBacklog(mes);
+  if(sub==='temas') { renderTemas(mes); initFormatosTema(mes); }
 }
 
 // ═══════════════════════════════════════════════════
@@ -1310,7 +1351,32 @@ function renderCalendario(mes) {
       if(d.getMonth()+1 === mesNum) dia = d.getDate();
     }
     if(!pubsPorDia[dia]) pubsPorDia[dia] = [];
-    pubsPorDia[dia].push(p);
+    pubsPorDia[dia].push({ ...p, _tipo: 'pub' });
+  });
+
+  // Agrupa temas por dia
+  const hoje = new Date(); hoje.setHours(0,0,0,0);
+  (estado[mes].temas||[]).forEach(t => {
+    t.formatos.forEach((f,fi) => {
+      if(!f.data) return;
+      const d = new Date(f.data+'T12:00:00');
+      if(d.getMonth()+1 !== mesNum) return;
+      const dia = d.getDate();
+      if(!pubsPorDia[dia]) pubsPorDia[dia] = [];
+      // Determina status visual
+      let statusCor, statusLabel;
+      if(f.status==='Publicado')     { statusCor='#1A7A4A'; statusLabel='✅'; }
+      else if(f.status==='Cancelado'){ statusCor='#888780'; statusLabel='⚫'; }
+      else if(d < hoje)              { statusCor='#c0392b'; statusLabel='🔴'; }
+      else if(d.toDateString()===hoje.toDateString()) { statusCor='#B45309'; statusLabel='🟡'; }
+      else                           { statusCor='#1E4D8C'; statusLabel='🔵'; }
+      pubsPorDia[dia].push({
+        titulo: `${t.titulo} — ${f.formato}`,
+        formato: f.formato, pilar: t.pilar,
+        _tipo: 'tema', _cor: statusCor, _label: statusLabel,
+        _temaId: t.id, _fmtIdx: fi, _status: f.status
+      });
+    });
   });
 
   // Cabeçalho dias da semana
@@ -1320,22 +1386,32 @@ function renderCalendario(mes) {
   for(let i=0; i<primeiroDia; i++) html += `<div class="cal-day vazio"></div>`;
 
   // Dias do mês
-  const hoje = new Date();
+  const hoje2 = new Date();
   for(let dia=1; dia<=diasNoMes; dia++) {
-    const isHoje = hoje.getDate()===dia && hoje.getMonth()+1===mesNum && hoje.getFullYear()===ano;
-    const pubs = pubsPorDia[dia] || [];
+    const isHoje = hoje2.getDate()===dia && hoje2.getMonth()+1===mesNum && hoje2.getFullYear()===ano;
+    const items = pubsPorDia[dia] || [];
     const maxShow = 3;
-    const pubsHtml = pubs.slice(0, maxShow).map(p => {
-      const icon = FORMATOS_CFG[p.formato]?.icon || '📌';
-      const titulo = p.titulo.length > 18 ? p.titulo.slice(0,18)+'…' : p.titulo;
-      return `<span class="cal-pub ${pilClass(p.pilar)}"
-        onmouseenter="showTooltip(event,'${p.titulo.replace(/'/g,"\\'")} · ${p.formato} · ${p.pilar}')"
+    const itemsHtml = items.slice(0, maxShow).map(item => {
+      const icon = FORMATOS_CFG[item.formato]?.icon || '📌';
+      const titulo = item.titulo.length > 18 ? item.titulo.slice(0,18)+'…' : item.titulo;
+      if(item._tipo === 'tema') {
+        // Item de tema — cor baseada no status
+        const cor = item._cor || '#1E4D8C';
+        const bg = cor+'22';
+        return `<span style="font-size:10px;font-weight:500;padding:2px 5px;border-radius:4px;margin-bottom:2px;cursor:pointer;
+          white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:block;max-width:100%;
+          background:${bg};color:${cor};border:1px solid ${cor}40;"
+          onmouseenter="showTooltip(event,'${item._label} ${item.titulo} · ${item._status}')"
+          onmouseleave="hideTooltip()">${item._label} ${titulo}</span>`;
+      }
+      return `<span class="cal-pub ${pilClass(item.pilar)}"
+        onmouseenter="showTooltip(event,'${item.titulo.replace(/'/g,"\\'")} · ${item.formato} · ${item.pilar}')"
         onmouseleave="hideTooltip()">${icon} ${titulo}</span>`;
     }).join('');
-    const mais = pubs.length > maxShow ? `<span class="cal-mais">+${pubs.length-maxShow} mais</span>` : '';
+    const mais = items.length > maxShow ? `<span class="cal-mais">+${items.length-maxShow} mais</span>` : '';
     html += `<div class="cal-day${isHoje?' hoje':''}">
       <span class="cal-num">${dia}</span>
-      ${pubsHtml}${mais}
+      ${itemsHtml}${mais}
     </div>`;
   }
 
@@ -1435,6 +1511,149 @@ function renderBacklog(mes) {
       </select>
       ${b.link ? `<a class="bk-link" href="${b.link}" target="_blank" rel="noopener">🔗 ${b.link.replace(/^https?:\/\//,'').slice(0,30)}${b.link.length>40?'…':''}</a>` : '<span style="color:var(--muted);font-size:12px;">—</span>'}
       <button class="btn-del" onclick="deletarBacklog('${mes}',${b.id})">×</button>
+    </div>`).join('');
+}
+
+// ═══════════════════════════════════════════════════
+// TEMAS
+// ═══════════════════════════════════════════════════
+let _formatosTema = {}; // { mes: [ {formato, data} ] }
+
+function initFormatosTema(mes) {
+  if (!_formatosTema[mes]) _formatosTema[mes] = [{ formato: '', data: '' }];
+  renderFormatosTema(mes);
+}
+
+function adicionarFormatoTema(mes) {
+  if (!_formatosTema[mes]) _formatosTema[mes] = [];
+  _formatosTema[mes].push({ formato: '', data: '' });
+  renderFormatosTema(mes);
+}
+
+function removerFormatoTema(mes, i) {
+  _formatosTema[mes].splice(i, 1);
+  renderFormatosTema(mes);
+}
+
+function renderFormatosTema(mes) {
+  const el = document.getElementById(`tm-formatos-${mes}`);
+  if(!el) return;
+  el.innerHTML = (_formatosTema[mes]||[]).map((f,i) => `
+    <div style="display:grid;grid-template-columns:180px 140px auto;gap:8px;align-items:center;">
+      <select id="tmf-fmt-${mes}-${i}" style="padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;background:var(--bg);color:var(--text);">
+        <option value="">Formato...</option>
+        ${Object.keys(FORMATOS_CFG).map(f=>`<option value="${f}" ${f===f.formato?'selected':''}>${FORMATOS_CFG[f].icon} ${f}</option>`).join('')}
+      </select>
+      <input type="date" id="tmf-data-${mes}-${i}" value="${f.data||''}"
+        style="padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;background:var(--bg);color:var(--text);" />
+      <button onclick="removerFormatoTema('${mes}',${i})"
+        style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:18px;padding:4px;">×</button>
+    </div>`).join('');
+}
+
+function salvarTema(mes) {
+  const titulo = document.getElementById(`tm-titulo-${mes}`)?.value.trim();
+  const pilar  = document.getElementById(`tm-pilar-${mes}`)?.value;
+  if(!titulo) { alert('Coloca o nome do tema.'); return; }
+
+  const formatos = (_formatosTema[mes]||[]).map((_, i) => ({
+    formato: document.getElementById(`tmf-fmt-${mes}-${i}`)?.value || '',
+    data:    document.getElementById(`tmf-data-${mes}-${i}`)?.value || '',
+    status:  'Agendado'
+  })).filter(f => f.formato);
+
+  if(formatos.length === 0) { alert('Adiciona pelo menos um formato.'); return; }
+
+  const tema = { id: Date.now(), titulo, pilar, formatos };
+  if(!estado[mes].temas) estado[mes].temas = [];
+  estado[mes].temas.push(tema);
+  salvarMes(mes);
+
+  // Limpa form
+  document.getElementById(`tm-titulo-${mes}`).value = '';
+  document.getElementById(`tm-pilar-${mes}`).value = '';
+  _formatosTema[mes] = [{ formato: '', data: '' }];
+  renderFormatosTema(mes);
+  renderTemas(mes);
+  flash(`status-tm-${mes}`);
+}
+
+function deletarTema(mes, id) {
+  estado[mes].temas = (estado[mes].temas||[]).filter(t => t.id !== id);
+  salvarMes(mes);
+  renderTemas(mes);
+}
+
+function atualizarStatusTema(mes, temaId, fmtIdx, novoStatus) {
+  const tema = (estado[mes].temas||[]).find(t => t.id === temaId);
+  if(tema && tema.formatos[fmtIdx]) {
+    tema.formatos[fmtIdx].status = novoStatus;
+    // Se publicado, registra também nas publicações
+    if(novoStatus === 'Publicado') {
+      const fmt = tema.formatos[fmtIdx];
+      // Verifica se já não existe
+      const jaExiste = estado[mes].pubs.some(p => p.temaId === temaId && p.fmtIdx === fmtIdx);
+      if(!jaExiste) {
+        estado[mes].pubs.push({
+          id: Date.now(), temaId, fmtIdx,
+          titulo: `${tema.titulo} — ${fmt.formato}`,
+          data: fmt.data, formato: fmt.formato, pilar: tema.pilar
+        });
+      }
+    }
+    salvarMes(mes);
+    renderTemas(mes);
+    renderMesDashboard(mes);
+    trocarSubAba(mes, 'temas', null);
+  }
+}
+
+function statusTemaClass(status, data) {
+  if(status === 'Publicado')  return { cls:'tag-publicado',  label:'✅ Publicado',  cor:'#1A7A4A', bg:'#E8F5EE' };
+  if(status === 'Cancelado')  return { cls:'tag-cancelado',  label:'⚫ Cancelado',  cor:'#888780', bg:'#F0F0EE' };
+  if(data) {
+    const hoje = new Date(); hoje.setHours(0,0,0,0);
+    const d = new Date(data+'T12:00:00');
+    if(d < hoje) return { cls:'tag-atrasado', label:'🔴 Atrasado', cor:'#c0392b', bg:'#FDECEA' };
+    if(d.toDateString()===hoje.toDateString()) return { cls:'tag-hoje', label:'🟡 Hoje', cor:'#B45309', bg:'#FEF3C7' };
+  }
+  return { cls:'tag-agendado', label:'🔵 Agendado', cor:'#1E4D8C', bg:'#EBF3FF' };
+}
+
+function renderTemas(mes) {
+  const temas = estado[mes].temas || [];
+  const el  = document.getElementById(`tm-list-${mes}`);
+  const cnt = document.getElementById(`tm-count-${mes}`);
+  if(!el) return;
+  if(cnt) cnt.textContent = temas.length > 0 ? `(${temas.length})` : '';
+  if(temas.length === 0) {
+    el.innerHTML = `<div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:32px;text-align:center;font-size:14px;color:var(--muted);">Nenhum tema criado ainda.<br>Use o formulário acima para começar.</div>`;
+    return;
+  }
+  el.innerHTML = temas.map(t => `
+    <div style="background:var(--card);border:1px solid var(--border);border-radius:12px;margin-bottom:10px;overflow:hidden;">
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-bottom:1px solid var(--border);">
+        <div>
+          <div style="font-size:14px;font-weight:600;color:var(--text);">${t.titulo}</div>
+          <div style="font-size:12px;color:var(--muted);margin-top:2px;">${t.pilar||'Sem pilar'} · ${t.formatos.length} formato${t.formatos.length>1?'s':''}</div>
+        </div>
+        <button onclick="deletarTema('${mes}',${t.id})" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:16px;">×</button>
+      </div>
+      <div style="padding:12px 18px;display:flex;flex-direction:column;gap:8px;">
+        ${t.formatos.map((f,i) => {
+          const st = statusTemaClass(f.status, f.data);
+          const fmtData = f.data ? (() => { const [y,m,d]=f.data.split('-'); return `${d}/${m}`; })() : '—';
+          return `<div style="display:grid;grid-template-columns:1fr 80px auto 36px;gap:10px;align-items:center;padding:8px 0;border-bottom:1px solid var(--border);">
+            <span style="font-size:13px;font-weight:500;">${FORMATOS_CFG[f.formato]?.icon||'📌'} ${f.formato}</span>
+            <span style="font-size:12px;color:var(--muted);">${fmtData}</span>
+            <select onchange="atualizarStatusTema('${mes}',${t.id},${i},this.value)"
+              style="padding:4px 8px;border-radius:6px;font-size:11px;font-weight:600;font-family:inherit;cursor:pointer;border:1px solid ${st.cor};background:${st.bg};color:${st.cor};">
+              ${['Agendado','Publicado','Cancelado'].map(s=>`<option value="${s}" ${f.status===s?'selected':''}>${s}</option>`).join('')}
+            </select>
+            <span style="font-size:11px;font-weight:600;color:${st.cor};"></span>
+          </div>`;
+        }).join('')}
+      </div>
     </div>`).join('');
 }
 
